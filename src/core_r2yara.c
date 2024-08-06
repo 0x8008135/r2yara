@@ -242,6 +242,8 @@ static int cmd_yara_scan(R2Yara *r2yara, R_NULLABLE const char* option) {
 	}
 #else
 	r_list_foreach (r2yara->rules_list, rules_it, rules) {
+		r_cons_printf ("%x\n", r2yara);
+		r_cons_printf ("%x\n", &r2yara);
 		yr_rules_scan_mem (rules, to_scan, to_scan_size, 0, callback, &r2yara, 0);
 	}
 #endif
