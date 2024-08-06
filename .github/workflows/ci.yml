@@ -1,4 +1,3 @@
-# TODO: add windows
 name: ci
 
 env:
@@ -7,41 +6,11 @@ env:
 on:
   push:
     branches:
-      - patch-1
+      - main
   pull_request:
   workflow_dispatch:
 
 jobs:
-  build-linux20:
-    runs-on: ubuntu-20.04
-    steps:
-    - uses: actions/checkout@v4
-    - name: Installing radare2
-      run: |
-        wget "https://github.com/radareorg/radare2/releases/download/${R2V}/radare2_${R2V}_amd64.deb"
-        wget "https://github.com/radareorg/radare2/releases/download/${R2V}/radare2-dev_${R2V}_amd64.deb"
-        sudo dpkg -i "radare2_${R2V}_amd64.deb"
-        sudo dpkg -i "radare2-dev_${R2V}_amd64.deb"
-    - name: Installing yara via r2pm
-      run: r2pm -Ui yara
-    - name: Building with meson
-      run: |
-        sudo apt install meson
-        r2pm -ci ninja
-        r2pm -r meson b
-        r2pm -r ninja -C b
-    - name: Building r2yara
-      run: |
-        r2pm -r ./configure
-        r2pm -r make -j
-        make user-install
-    - name: Packaging
-      run: make -C dist/debian
-    - name: Pub
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-linux
-        path: dist/debian/*.deb
   build-linux22:
     runs-on: ubuntu-22.04
     steps:
@@ -56,91 +25,3 @@ jobs:
       run: R2_DEBUG=1 r2 -qcq -c 'yrv' --
     - name: Running Testsuite
       run: make -C test
-  build-macos:
-    runs-on: macos-12
-    steps:
-    - uses: actions/checkout@v4
-    - name: Install dependencies
-      run: brew install pkg-config
-    - name: Building Radare2 from git
-      run: |
-        brew install automake autoconf
-        export CFLAGS=-O0
-        git clone --branch "${R2V}" --depth=1 https://github.com/radareorg/radare2 && cd radare2
-        ./configure
-        make -j && sudo make install
-    - name: Installing yara via r2pm
-      run: r2pm -Ui yara
-    - name: Building r2yara
-      run: |
-        r2pm -r ./configure
-        r2pm -r make -j
-        make user-install
-#    - name: Packaging
-#      run: make -C dist/macos
-#    - name: Pub
-#      uses: actions/upload-artifact@v4
-#      with:
-#        if-no-files-found: error
-#        name: build-macos
-#        path: dist/macos/r2yara-*.pkg
-
-  check_release:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-    outputs:
-      is_release: ${{ steps.release.outputs.is }}
-      tag_name: ${{ steps.release.outputs.tag }}
-    needs:
-      - build-linux20
-      - build-linux22
-      - build-macos
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Download all git history and tags
-      - name: Check if is a release
-        run: |
-          TAG="`git describe --exact-match --tags ${{ github.sha }} || true`"
-          if [ -n "$TAG" ]; then
-            echo "tag=$TAG" >> $GITHUB_OUTPUT
-            echo "is=yes" >> $GITHUB_OUTPUT
-          else
-            echo "is=no" >> $GITHUB_OUTPUT
-          fi
-        id: release
-
-  release:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.check_release.outputs.is_release == 'yes' }}
-    needs:
-      - check_release
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Download all git history and tags
-      - name: Extract r2f version
-        shell: bash
-        run: echo "branch=`./configure -qV`" >> $GITHUB_OUTPUT
-        id: r2fv
-      - name: Prepare release notes
-        run: echo Release > ./RELEASE_NOTES.md
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: dist/artifacts
-      - name: Create GitHub release
-        id: create_release
-        uses: softprops/action-gh-release@v2.0.4
-        with:
-          name: ${{ steps.r2fv.outputs.branch }}
-          tag_name: ${{ needs.check_release.outputs.tag_name }}
-          body_path: ./RELEASE_NOTES.md
-          draft: false
-          prerelease: false
-          generate_release_notes: false
-          files: |
-            dist/artifacts/build-linux/r2yara_${{ steps.r2fv.outputs.branch }}_amd64.deb
-#           dist/artifacts/build-macos/r2yara-${{ steps.r2fv.outputs.branch }}-x64.pkg
